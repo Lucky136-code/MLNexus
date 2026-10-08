@@ -97,14 +97,14 @@ button[data-testid="stHeaderCollapseButton"] {
     left: auto !important;
     z-index: 100005 !important;
     background: #ffffff !important;
-    border: 1px solid #cbd5e1 !important;
+    border: 2px solid #000000 !important;
     border-radius: 8px !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08) !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.12) !important;
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    width: 38px !important;
-    height: 38px !important;
+    width: 40px !important;
+    height: 40px !important;
     cursor: pointer !important;
     transition: all 0.2s ease !important;
 }
@@ -112,18 +112,17 @@ button[data-testid="stHeaderCollapseButton"] {
 [data-testid="stSidebarCollapseButton"]:hover {
     border-color: #dc2626 !important;
     background: #fff5f5 !important;
-    box-shadow: 0 4px 12px rgba(220,38,38,0.15) !important;
+    box-shadow: 0 4px 12px rgba(220,38,38,0.2) !important;
 }
-[data-testid="stCollapsedControl"] button,
-[data-testid="stCollapsedControl"] svg,
-[data-testid="stCollapsedControl"] span,
-[data-testid="stSidebarCollapseButton"] button,
-[data-testid="stSidebarCollapseButton"] svg,
-[data-testid="stSidebarCollapseButton"] span {
-    color: #0f172a !important;
-    fill: #0f172a !important;
-    stroke: #0f172a !important;
+[data-testid="stCollapsedControl"] *,
+[data-testid="stSidebarCollapseButton"] *,
+button[data-testid="stHeaderNavButton"] *,
+button[data-testid="stHeaderCollapseButton"] * {
+    color: #000000 !important;
+    fill: #000000 !important;
+    stroke: #000000 !important;
 }
+
 
 
 
