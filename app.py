@@ -75,23 +75,27 @@ html, body, [class*="css"], .stMarkdown, [data-testid="stAppViewContainer"] {
     background-color: #f8fafc !important;
 }
 
-/* ── Hide Streamlit Chrome & Position Mobile Sidebar Toggle ── */
+/* ── Hide Streamlit Chrome & Position ☰ Triple Line Sidebar Toggle Button ── */
 #MainMenu, footer, .stDeployButton {
-    visibility: hidden !important; height: 0 !important;
+    visibility: hidden !important; height: 0 !important; display: none !important;
 }
 header[data-testid="stHeader"] {
     background: transparent !important;
     height: 0 !important;
     overflow: visible !important;
-    z-index: 99990 !important;
+    z-index: 100000 !important;
 }
 
-[data-testid="stCollapsedControl"] {
+/* ☰ Triple Line (Hamburger) Option Button */
+[data-testid="stCollapsedControl"],
+[data-testid="stSidebarCollapseButton"],
+button[data-testid="stHeaderNavButton"],
+button[data-testid="stHeaderCollapseButton"] {
     position: fixed !important;
-    top: 10px !important;
-    right: 14px !important;
+    top: 9px !important;
+    right: 16px !important;
     left: auto !important;
-    z-index: 100001 !important;
+    z-index: 100005 !important;
     background: #ffffff !important;
     border: 1px solid #cbd5e1 !important;
     border-radius: 8px !important;
@@ -99,19 +103,28 @@ header[data-testid="stHeader"] {
     display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    width: 36px !important;
-    height: 36px !important;
+    width: 38px !important;
+    height: 38px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
 }
-[data-testid="stCollapsedControl"] button,
-[data-testid="stCollapsedControl"] span {
-    color: #0f172a !important;
-    background: transparent !important;
-    border: none !important;
-}
-[data-testid="stCollapsedControl"]:hover {
+[data-testid="stCollapsedControl"]:hover,
+[data-testid="stSidebarCollapseButton"]:hover {
     border-color: #dc2626 !important;
     background: #fff5f5 !important;
+    box-shadow: 0 4px 12px rgba(220,38,38,0.15) !important;
 }
+[data-testid="stCollapsedControl"] button,
+[data-testid="stCollapsedControl"] svg,
+[data-testid="stCollapsedControl"] span,
+[data-testid="stSidebarCollapseButton"] button,
+[data-testid="stSidebarCollapseButton"] svg,
+[data-testid="stSidebarCollapseButton"] span {
+    color: #0f172a !important;
+    fill: #0f172a !important;
+    stroke: #0f172a !important;
+}
+
 
 
 /* ── Block Container ── */
@@ -330,22 +343,18 @@ div[data-testid="stMetric"] [data-testid="stMetricValue"] {
 
 /* navbar */
 .ag-nav {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center; justify-content: center;
     background: #ffffff;
     border-bottom: 1px solid #e2e8f0;
-    padding: 0 2rem; height: 58px;
+    padding: 0 1.5rem; height: 56px;
     margin: 0 -2rem 1.75rem -2rem;
     position: sticky; top: 0; z-index: 9999;
     box-shadow: 0 1px 4px rgba(0,0,0,0.04);
 }
-.ag-nav-left-empty { flex: 1; }
-.ag-nav-center {
-    flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+.ag-nav-logo-center {
+    display: flex; align-items: center; justify-content: center; gap: 0.2rem;
 }
-.ag-nav-right {
-    flex: 1; display: flex; align-items: center; justify-content: flex-end;
-    font-size: 0.8rem; color: #475569; font-weight: 500;
-}
+
 
 /* pipeline stepper - red process line theme */
 .ag-pip {
@@ -696,14 +705,14 @@ div[data-testid="stMetric"] [data-testid="stMetricValue"] {
 def navbar_html(task_type: str = "") -> str:
     return f"""
     <div class="ag-nav">
-        <div class="ag-nav-brand">
+        <div class="ag-nav-logo-center">
             <span style="color:#dc2626; display:flex; align-items:center;">
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
             </span>
-            <span style="font-weight:800; color:#0f172a; font-size:1.2rem; letter-spacing:-0.02em; margin-left:6px;">ML</span><span style="font-weight:800; color:#dc2626; font-size:1.2rem; letter-spacing:-0.02em;">Nexus</span>
+            <span style="font-weight:800; color:#0f172a; font-size:1.25rem; letter-spacing:-0.02em; margin-left:6px;">ML</span><span style="font-weight:800; color:#dc2626; font-size:1.25rem; letter-spacing:-0.02em;">Nexus</span>
         </div>
-        <div class="ag-nav-menu-slot"></div>
     </div>"""
+
 
 
 
