@@ -188,15 +188,51 @@ div[data-testid="stMetric"] [data-testid="stMetricValue"] {
 }
 
 /* ── File Uploader ── */
+[data-testid="stFileUploader"] label {
+    color: #0f172a !important;
+    font-weight: 700 !important;
+}
 [data-testid="stFileUploader"] section {
     border: 2px dashed #cbd5e1 !important;
     border-radius: 10px !important;
-    background: #f8fafc !important;
+    background: #ffffff !important;
+    padding: 1rem !important;
     transition: all 0.2s !important;
 }
 [data-testid="stFileUploader"] section:hover {
-    border-color: #dc2626 !important; background: #fff5f5 !important;
+    border-color: #dc2626 !important;
+    background: #fff5f5 !important;
 }
+[data-testid="stFileUploader"] section button,
+[data-testid="stFileUploader"] button {
+    background: #dc2626 !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 8px !important;
+    font-weight: 600 !important;
+    font-size: 0.88rem !important;
+    padding: 0.5rem 1.25rem !important;
+    box-shadow: 0 2px 8px rgba(220, 38, 38, 0.25) !important;
+}
+[data-testid="stFileUploader"] section button:hover,
+[data-testid="stFileUploader"] button:hover {
+    background: #b91c1c !important;
+    color: #ffffff !important;
+}
+[data-testid="stFileUploader"] section button *,
+[data-testid="stFileUploader"] button * {
+    color: #ffffff !important;
+    fill: #ffffff !important;
+    stroke: #ffffff !important;
+}
+[data-testid="stFileUploader"] section small,
+[data-testid="stFileUploader"] section span,
+[data-testid="stFileUploader"] section p,
+[data-testid="stFileUploader"] section div[data-testid="stMarkdownContainer"] p {
+    color: #475569 !important;
+    font-weight: 500 !important;
+}
+
 
 /* ── Tabs ── */
 .stTabs [data-baseweb="tab-list"] {
@@ -626,42 +662,35 @@ def explain_card_html(name: str, p_label: str,
     rdf     = results["results_df"]
 
     # Extra metric chips depending on task
+    # NOTE: built as single flush-left lines — Streamlit's markdown parser
+    # turns indented HTML after a blank line into a code block otherwise.
     rt = results["task_type"]
     try:
         row = rdf[rdf["Model"] == name].iloc[0]
         if rt == "classification":
-            extras = f"""
-            <div class="ag-met-chip"><span class="mv">{row['Accuracy']:.4f}</span>
-                <span class="ml">Accuracy</span></div>
-            <div class="ag-met-chip"><span class="mv">{row['Precision']:.4f}</span>
-                <span class="ml">Precision</span></div>
-            <div class="ag-met-chip"><span class="mv">{row['Recall']:.4f}</span>
-                <span class="ml">Recall</span></div>"""
+            extras = (
+                f'<div class="ag-met-chip"><span class="mv">{row["Accuracy"]:.4f}</span><span class="ml">Accuracy</span></div>'
+                f'<div class="ag-met-chip"><span class="mv">{row["Precision"]:.4f}</span><span class="ml">Precision</span></div>'
+                f'<div class="ag-met-chip"><span class="mv">{row["Recall"]:.4f}</span><span class="ml">Recall</span></div>'
+            )
         else:
-            extras = f"""
-            <div class="ag-met-chip"><span class="mv">{row['MAE']:.4f}</span>
-                <span class="ml">MAE</span></div>
-            <div class="ag-met-chip"><span class="mv">{row['RMSE']:.4f}</span>
-                <span class="ml">RMSE</span></div>"""
+            extras = (
+                f'<div class="ag-met-chip"><span class="mv">{row["MAE"]:.4f}</span><span class="ml">MAE</span></div>'
+                f'<div class="ag-met-chip"><span class="mv">{row["RMSE"]:.4f}</span><span class="ml">RMSE</span></div>'
+            )
     except Exception:
         extras = ""
 
-    return f"""
-    <div class="ag-explain">
-        <h3>Why {name} was selected</h3>
-        <p>{desc}</p>
-        <div class="ag-met-trio">
-            <div class="ag-met-chip">
-                <span class="mv">{primary:.4f}</span>
-                <span class="ml">{p_label}</span>
-            </div>
-            {extras}
-            <div class="ag-met-chip">
-                <span class="mv">{t}s</span>
-                <span class="ml">Train time</span>
-            </div>
-        </div>
-    </div>"""
+    return (
+        '<div class="ag-explain">'
+        f'<h3>Why {name} was selected</h3>'
+        f'<p>{desc}</p>'
+        '<div class="ag-met-trio">'
+        f'<div class="ag-met-chip"><span class="mv">{primary:.4f}</span><span class="ml">{p_label}</span></div>'
+        f'{extras}'
+        f'<div class="ag-met-chip"><span class="mv">{t}s</span><span class="ml">Train time</span></div>'
+        '</div></div>'
+    )
 
 
 def chart_header(title: str, sub: str = "") -> str:
