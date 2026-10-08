@@ -75,10 +75,44 @@ html, body, [class*="css"], .stMarkdown, [data-testid="stAppViewContainer"] {
     background-color: #f8fafc !important;
 }
 
-/* ── Hide Streamlit Chrome ── */
-#MainMenu, header[data-testid="stHeader"], footer, .stDeployButton {
+/* ── Hide Streamlit Chrome & Position Mobile Sidebar Toggle ── */
+#MainMenu, footer, .stDeployButton {
     visibility: hidden !important; height: 0 !important;
 }
+header[data-testid="stHeader"] {
+    background: transparent !important;
+    height: 0 !important;
+    overflow: visible !important;
+    z-index: 99990 !important;
+}
+
+[data-testid="stCollapsedControl"] {
+    position: fixed !important;
+    top: 10px !important;
+    right: 14px !important;
+    left: auto !important;
+    z-index: 100001 !important;
+    background: #ffffff !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 8px !important;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.08) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 36px !important;
+    height: 36px !important;
+}
+[data-testid="stCollapsedControl"] button,
+[data-testid="stCollapsedControl"] span {
+    color: #0f172a !important;
+    background: transparent !important;
+    border: none !important;
+}
+[data-testid="stCollapsedControl"]:hover {
+    border-color: #dc2626 !important;
+    background: #fff5f5 !important;
+}
+
 
 /* ── Block Container ── */
 .main .block-container {
@@ -533,9 +567,127 @@ div[data-testid="stMetric"] [data-testid="stMetricValue"] {
     font-size:1.6rem; font-weight:700; color:#0f172a;
     margin-bottom:0.45rem;
 }
-.ag-cta p {
-    color:#475569; font-size:0.95rem; font-weight:500;
-    max-width:520px; margin:0 auto; line-height:1.6;
+/* ══════════════════════════════════════════
+   MOBILE RESPONSIVE UI (@media max-width: 768px)
+══════════════════════════════════════════ */
+@media (max-width: 768px) {
+    .main .block-container {
+        padding: 0.5rem 0.75rem 2rem 0.75rem !important;
+    }
+
+    /* Top Navbar on Mobile */
+    .ag-nav {
+        padding: 0 0.85rem !important;
+        margin: 0 -0.75rem 1.25rem -0.75rem !important;
+        height: 52px !important;
+    }
+    
+    /* Responsive Stepper / Progress Bar */
+    .ag-pip {
+        padding: 0.75rem 0.35rem !important;
+        margin-bottom: 1.25rem !important;
+        justify-content: space-between !important;
+        overflow-x: auto !important;
+        width: 100% !important;
+        border-radius: 10px !important;
+        -webkit-overflow-scrolling: touch !important;
+        gap: 0 !important;
+    }
+    .ag-pip-step {
+        gap: 0.25rem !important;
+        flex-shrink: 0 !important;
+    }
+    .ag-pip-node {
+        width: 32px !important;
+        height: 32px !important;
+    }
+    .ag-pip-node svg {
+        width: 14px !important;
+        height: 14px !important;
+    }
+    .ag-pip-lbl {
+        font-size: 0.62rem !important;
+        font-weight: 600 !important;
+    }
+    .ag-pip-conn {
+        height: 2px !important;
+        width: 16px !important;
+        min-width: 8px !important;
+        margin-top: 15px !important;
+        flex-shrink: 1 !important;
+    }
+
+    /* Stat Chips Grid on Mobile */
+    .ag-stat-row {
+        gap: 0.4rem !important;
+    }
+    .ag-stat-chip {
+        flex: 1 1 calc(50% - 0.4rem) !important;
+        padding: 0.4rem 0.65rem !important;
+        font-size: 0.78rem !important;
+        justify-content: space-between !important;
+    }
+
+    /* Leaderboard on Mobile */
+    .ag-lb-row {
+        padding: 0.5rem 0.65rem !important;
+        gap: 0.4rem !important;
+    }
+    .ag-lb-name {
+        font-size: 0.78rem !important;
+        min-width: 75px !important;
+    }
+    .ag-lb-bar-wrap {
+        min-width: 45px !important;
+    }
+    .ag-lb-score {
+        font-size: 0.75rem !important;
+        width: 38px !important;
+    }
+    .ag-lb-time, .ag-lb-hdr-time {
+        display: none !important;
+    }
+    .ag-lb-hdr {
+        padding: 0 0.65rem 0.3rem 0.65rem !important;
+        gap: 0.4rem !important;
+    }
+    .ag-lb-hdr-name {
+        min-width: 75px !important;
+    }
+    .ag-lb-hdr-bar {
+        min-width: 45px !important;
+    }
+
+    /* Cards & Explanations */
+    .ag-explain {
+        padding: 1rem 1.1rem !important;
+    }
+    .ag-how-card {
+        padding: 1.1rem 1rem !important;
+        margin-bottom: 0.75rem !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .ag-pip {
+        padding: 0.65rem 0.2rem !important;
+    }
+    .ag-pip-node {
+        width: 28px !important;
+        height: 28px !important;
+    }
+    .ag-pip-node svg {
+        width: 12px !important;
+        height: 12px !important;
+    }
+    .ag-pip-lbl {
+        font-size: 0.55rem !important;
+    }
+    .ag-pip-conn {
+        width: 10px !important;
+        min-width: 6px !important;
+        margin-top: 13px !important;
+    }
 }
 </style>
 """
@@ -544,15 +696,15 @@ div[data-testid="stMetric"] [data-testid="stMetricValue"] {
 def navbar_html(task_type: str = "") -> str:
     return f"""
     <div class="ag-nav">
-        <div class="ag-nav-left-empty"></div>
-        <div class="ag-nav-center">
+        <div class="ag-nav-brand">
             <span style="color:#dc2626; display:flex; align-items:center;">
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
             </span>
-            <span style="font-weight:800; color:#0f172a; font-size:1.25rem; letter-spacing:-0.02em;">ML</span><span style="font-weight:800; color:#dc2626; font-size:1.25rem; letter-spacing:-0.02em;">Nexus</span>
+            <span style="font-weight:800; color:#0f172a; font-size:1.2rem; letter-spacing:-0.02em; margin-left:6px;">ML</span><span style="font-weight:800; color:#dc2626; font-size:1.2rem; letter-spacing:-0.02em;">Nexus</span>
         </div>
-        <div class="ag-nav-right"></div>
+        <div class="ag-nav-menu-slot"></div>
     </div>"""
+
 
 
 def pipeline_html(step: int) -> str:
