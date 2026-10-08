@@ -1,6 +1,9 @@
-# MLNexus
+# ⚡ MLNexus — Automated Machine Learning Platform
 
-MLNexus is an automated machine learning (AutoML) web application built with Streamlit, scikit-learn, and Plotly. It allows you to upload any tabular dataset (CSV/TSV), choose a target column, and automatically train, rank, and evaluate multiple classification and regression algorithms.
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://mlnexus.streamlit.app/)
+**Live Web Application**: [https://mlnexus.streamlit.app/](https://mlnexus.streamlit.app/)
+
+MLNexus is an automated machine learning (AutoML) web application built with Streamlit, scikit-learn, and Plotly. It allows you to upload any tabular dataset (CSV/TSV), choose a target column, and automatically train, rank, and evaluate multiple classification and regression algorithms in 1-click.
 
 ## Features
 
