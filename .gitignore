@@ -6,3 +6,5 @@ venv/
 ENV/
 .streamlit/config.toml
 .DS_Store
+
+_ppt_shots/
