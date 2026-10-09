@@ -28,6 +28,14 @@ from preprocessing import (auto_detect_task_type, coerce_object_columns_to_numer
 
 warnings.filterwarnings("ignore")
 
+# Streamlit App Initialization (Must be the very first Streamlit call)
+st.set_page_config(
+    page_title="MLNexus — Automated ML Platform",
+    page_icon="⚡",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
 MAX_ROWS     = 10_000
 RANDOM_STATE = 42
 TASK_OPTIONS = ["Classification", "Regression", "Unsupervised"]
@@ -965,13 +973,6 @@ def run_automl(df, target_col, task_type, test_frac, run_cv, run_tuning, status_
         return None
 
 
-# Streamlit App Initialization
-st.set_page_config(
-    page_title="MLNexus — Automated ML Platform",
-    page_icon="⚡",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
 st.markdown(CSS, unsafe_allow_html=True)
 
 # Session state initialization & Callbacks
