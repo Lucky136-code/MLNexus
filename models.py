@@ -1,7 +1,9 @@
 """
-Model training and hyperparameter tuning definitions.
+Model training, hyperparameter tuning, metrics, and artifact export utilities.
 """
 
+import io
+import pickle
 import time
 
 import numpy as np
@@ -23,7 +25,7 @@ from sklearn.linear_model import (Lasso, LinearRegression,
                                   RidgeClassifier, SGDClassifier,
                                   SGDRegressor)
 from sklearn.metrics import (accuracy_score, calinski_harabasz_score,
-                             davies_bouldin_score, f1_score,
+                             confusion_matrix, davies_bouldin_score, f1_score,
                              mean_absolute_error, mean_squared_error,
                              precision_score, r2_score, recall_score,
                              silhouette_score)
@@ -229,103 +231,50 @@ UNSUPERVISED_RESULT_COLUMNS = [
 def build_classifiers(n_train):
     """Return classification model specifications."""
     specs = [
-        ("Logistic Regression",
-         LogisticRegression(max_iter=2000, random_state=RANDOM_STATE),
-         "Linear Model", None),
-        ("Ridge Classifier",
-         RidgeClassifier(random_state=RANDOM_STATE),
-         "Linear Model", None),
-        ("SGD Classifier",
-         SGDClassifier(max_iter=1000, random_state=RANDOM_STATE),
-         "Linear Model", None),
-        ("Linear SVM",
-         LinearSVC(max_iter=5000, random_state=RANDOM_STATE),
-         "Support Vector Machine", None),
-        ("SVM (RBF Kernel)",
-         SVC(random_state=RANDOM_STATE),
-         "Support Vector Machine", MAX_SVM_ROWS),
+        ("Logistic Regression", LogisticRegression(max_iter=2000, random_state=RANDOM_STATE), "Linear Model", None),
+        ("Ridge Classifier", RidgeClassifier(random_state=RANDOM_STATE), "Linear Model", None),
+        ("SGD Classifier", SGDClassifier(max_iter=1000, random_state=RANDOM_STATE), "Linear Model", None),
+        ("Linear SVM", LinearSVC(max_iter=5000, random_state=RANDOM_STATE), "Support Vector Machine", None),
+        ("SVM (RBF Kernel)", SVC(random_state=RANDOM_STATE), "Support Vector Machine", MAX_SVM_ROWS),
         ("Gaussian Naive Bayes", GaussianNB(), "Bayesian", None),
-        ("K-Nearest Neighbors",
-         KNeighborsClassifier(n_neighbors=min(5, max(1, n_train))),
-         "Instance-Based", None),
-        ("Decision Tree",
-         DecisionTreeClassifier(random_state=RANDOM_STATE),
-         "Tree / Ensemble", None),
-        ("Random Forest",
-         RandomForestClassifier(n_estimators=200, random_state=RANDOM_STATE, n_jobs=-1),
-         "Tree / Ensemble", None),
-        ("Extra Trees",
-         ExtraTreesClassifier(n_estimators=200, random_state=RANDOM_STATE, n_jobs=-1),
-         "Tree / Ensemble", None),
-        ("AdaBoost",
-         AdaBoostClassifier(n_estimators=100, random_state=RANDOM_STATE),
-         "Tree / Ensemble", None),
-        ("Gradient Boosting",
-         GradientBoostingClassifier(random_state=RANDOM_STATE),
-         "Tree / Ensemble", None),
-        ("Hist Gradient Boosting",
-         HistGradientBoostingClassifier(random_state=RANDOM_STATE),
-         "Tree / Ensemble", None),
-        ("MLP Neural Network",
-         MLPClassifier(hidden_layer_sizes=(64, 32), max_iter=400,
-                       early_stopping=(n_train >= 100),
-                       random_state=RANDOM_STATE),
-         "Neural Network", None),
-        ("Linear Discriminant Analysis",
-         LinearDiscriminantAnalysis(), "Discriminant Analysis", None),
-        ("Quadratic Discriminant Analysis",
-         QuadraticDiscriminantAnalysis(), "Discriminant Analysis", None),
+        ("K-Nearest Neighbors", KNeighborsClassifier(n_neighbors=min(5, max(1, n_train))), "Instance-Based", None),
+        ("Decision Tree", DecisionTreeClassifier(random_state=RANDOM_STATE), "Tree / Ensemble", None),
+        ("Random Forest", RandomForestClassifier(n_estimators=200, random_state=RANDOM_STATE, n_jobs=-1), "Tree / Ensemble", None),
+        ("Extra Trees", ExtraTreesClassifier(n_estimators=200, random_state=RANDOM_STATE, n_jobs=-1), "Tree / Ensemble", None),
+        ("AdaBoost", AdaBoostClassifier(n_estimators=100, random_state=RANDOM_STATE), "Tree / Ensemble", None),
+        ("Gradient Boosting", GradientBoostingClassifier(random_state=RANDOM_STATE), "Tree / Ensemble", None),
+        ("Hist Gradient Boosting", HistGradientBoostingClassifier(random_state=RANDOM_STATE), "Tree / Ensemble", None),
+        ("MLP Neural Network", MLPClassifier(hidden_layer_sizes=(64, 32), max_iter=400, early_stopping=(n_train >= 100), random_state=RANDOM_STATE), "Neural Network", None),
+        ("Linear Discriminant Analysis", LinearDiscriminantAnalysis(), "Discriminant Analysis", None),
+        ("Quadratic Discriminant Analysis", QuadraticDiscriminantAnalysis(), "Discriminant Analysis", None),
     ]
-    return [{"name": n, "estimator": e, "family": f, "cap": c}
-            for n, e, f, c in specs]
+    return [{"name": n, "estimator": e, "family": f, "cap": c} for n, e, f, c in specs]
 
 
 def build_regressors(n_train):
     """Return regression model specifications."""
     specs = [
-        ("Linear Regression",
-         LinearRegression(), "Linear Model", None),
-        ("Ridge Regression",
-         Ridge(random_state=RANDOM_STATE), "Linear Model", None),
-        ("Lasso Regression",
-         Lasso(max_iter=3000, random_state=RANDOM_STATE), "Linear Model", None),
-        ("SGD Regressor",
-         SGDRegressor(max_iter=1000, random_state=RANDOM_STATE), "Linear Model", None),
-        ("SVR (RBF Kernel)",
-         SVR(), "Support Vector Machine", MAX_SVM_ROWS),
-        ("K-Nearest Neighbors",
-         KNeighborsRegressor(n_neighbors=min(5, max(1, n_train))),
-         "Instance-Based", None),
-        ("Decision Tree",
-         DecisionTreeRegressor(random_state=RANDOM_STATE), "Tree / Ensemble", None),
-        ("Random Forest",
-         RandomForestRegressor(n_estimators=200, random_state=RANDOM_STATE, n_jobs=-1),
-         "Tree / Ensemble", None),
-        ("Extra Trees",
-         ExtraTreesRegressor(n_estimators=200, random_state=RANDOM_STATE, n_jobs=-1),
-         "Tree / Ensemble", None),
-        ("AdaBoost",
-         AdaBoostRegressor(n_estimators=100, random_state=RANDOM_STATE),
-         "Tree / Ensemble", None),
-        ("Gradient Boosting",
-         GradientBoostingRegressor(random_state=RANDOM_STATE), "Tree / Ensemble", None),
-        ("Hist Gradient Boosting",
-         HistGradientBoostingRegressor(random_state=RANDOM_STATE), "Tree / Ensemble", None),
-        ("MLP Neural Network",
-         MLPRegressor(hidden_layer_sizes=(64, 32), max_iter=400,
-                       early_stopping=(n_train >= 100),
-                       random_state=RANDOM_STATE),
-          "Neural Network", None),
+        ("Linear Regression", LinearRegression(), "Linear Model", None),
+        ("Ridge Regression", Ridge(random_state=RANDOM_STATE), "Linear Model", None),
+        ("Lasso Regression", Lasso(max_iter=3000, random_state=RANDOM_STATE), "Linear Model", None),
+        ("SGD Regressor", SGDRegressor(max_iter=1000, random_state=RANDOM_STATE), "Linear Model", None),
+        ("SVR (RBF Kernel)", SVR(), "Support Vector Machine", MAX_SVM_ROWS),
+        ("K-Nearest Neighbors", KNeighborsRegressor(n_neighbors=min(5, max(1, n_train))), "Instance-Based", None),
+        ("Decision Tree", DecisionTreeRegressor(random_state=RANDOM_STATE), "Tree / Ensemble", None),
+        ("Random Forest", RandomForestRegressor(n_estimators=200, random_state=RANDOM_STATE, n_jobs=-1), "Tree / Ensemble", None),
+        ("Extra Trees", ExtraTreesRegressor(n_estimators=200, random_state=RANDOM_STATE, n_jobs=-1), "Tree / Ensemble", None),
+        ("AdaBoost", AdaBoostRegressor(n_estimators=100, random_state=RANDOM_STATE), "Tree / Ensemble", None),
+        ("Gradient Boosting", GradientBoostingRegressor(random_state=RANDOM_STATE), "Tree / Ensemble", None),
+        ("Hist Gradient Boosting", HistGradientBoostingRegressor(random_state=RANDOM_STATE), "Tree / Ensemble", None),
+        ("MLP Neural Network", MLPRegressor(hidden_layer_sizes=(64, 32), max_iter=400, early_stopping=(n_train >= 100), random_state=RANDOM_STATE), "Neural Network", None),
     ]
-    return [{"name": n, "estimator": e, "family": f, "cap": c}
-            for n, e, f, c in specs]
+    return [{"name": n, "estimator": e, "family": f, "cap": c} for n, e, f, c in specs]
 
 
 def build_unsupervised_models(n_samples, n_features):
     """Return unsupervised model specifications."""
     k = min(5, max(2, n_samples // 10))
     pca_n = min(3, max(1, n_features))
-    # TruncatedSVD requires n_components < n_features strictly
     svd_n = min(3, max(1, n_features - 1)) if n_features > 1 else None
 
     specs = [
@@ -336,7 +285,6 @@ def build_unsupervised_models(n_samples, n_features):
         ("BIRCH Clustering", Birch(n_clusters=k), "Clustering", "clustering"),
         ("Principal Component Analysis", PCA(n_components=pca_n), "Dimensionality Reduction", "dim_reduction"),
     ]
-    # Only add TruncatedSVD if we have more than 1 feature
     if svd_n is not None:
         specs.append(
             ("Truncated SVD", TruncatedSVD(n_components=svd_n, random_state=RANDOM_STATE), "Dimensionality Reduction", "dim_reduction"),
@@ -350,7 +298,7 @@ def build_unsupervised_models(n_samples, n_features):
 
 
 def train_unsupervised_models(X_scaled, progress_bar=None):
-    """Train unsupervised models and evaluate cluster/reduction/anomaly metrics."""
+    """Train unsupervised models and compute clustering/dimensionality reduction metrics."""
     n_samples, n_features = X_scaled.shape
     specs = build_unsupervised_models(n_samples, n_features)
     trained, failed = [], []
@@ -396,7 +344,6 @@ def train_unsupervised_models(X_scaled, progress_bar=None):
                 sil = exp_var
                 ch = np.nan
                 db = np.nan
-                # Safe component count: PCA uses n_components_, TruncatedSVD uses n_components
                 n_comp = getattr(model, "n_components_", None) or getattr(model, "n_components", "?")
                 cluster_desc = f"{n_comp} Components"
                 sort_val = exp_var
@@ -440,8 +387,11 @@ def train_unsupervised_models(X_scaled, progress_bar=None):
 
 
 def train_all_models(X_train, X_test, y_train, y_test,
-                     task_type, progress_bar, run_cv=False):
-    """Train all models, compute metrics and optional CV scores."""
+                     task_type, progress_bar=None, run_cv=False, col_info=None):
+    """
+    Train all classification or regression models with strict evaluation consistency.
+    Guarantees mathematical alignment between reported test metrics and confusion matrix.
+    """
     specs = (build_classifiers(len(X_train))
              if task_type == "classification"
              else build_regressors(len(X_train)))
@@ -453,11 +403,15 @@ def train_all_models(X_train, X_test, y_train, y_test,
     y_cv = y_train.iloc[:cv_n]
     cv_scoring = "f1_weighted" if task_type == "classification" else "r2"
 
+    n_classes = col_info.get("n_classes") if col_info else None
+    is_binary = (task_type == "classification" and n_classes == 2)
+
     for i, spec in enumerate(specs):
-        progress_bar.progress(
-            0.30 + 0.60 * (i / total),
-            text=f"Training {spec['name']} ({i + 1}/{total})…",
-        )
+        if progress_bar:
+            progress_bar.progress(
+                0.30 + 0.60 * (i / total),
+                text=f"Training {spec['name']} ({i + 1}/{total})…",
+            )
         try:
             Xtr, ytr = X_train, y_train
             if spec["cap"] and len(X_train) > spec["cap"]:
@@ -483,36 +437,50 @@ def train_all_models(X_train, X_test, y_train, y_test,
                     cv_mean_str = "error"
 
             if task_type == "classification":
+                acc = accuracy_score(y_test, preds)
+
+                if is_binary:
+                    # Explicit binary metric calculation for positive class (label 1)
+                    prec = precision_score(y_test, preds, average="binary", pos_label=1, zero_division=0)
+                    rec = recall_score(y_test, preds, average="binary", pos_label=1, zero_division=0)
+                    f1 = f1_score(y_test, preds, average="binary", pos_label=1, zero_division=0)
+                    f1_weighted = f1_score(y_test, preds, average="weighted", zero_division=0)
+                else:
+                    prec = precision_score(y_test, preds, average="weighted", zero_division=0)
+                    rec = recall_score(y_test, preds, average="weighted", zero_division=0)
+                    f1 = f1_score(y_test, preds, average="weighted", zero_division=0)
+                    f1_weighted = f1
+
                 record = {
                     "Model": spec["name"],
                     "Family": spec["family"],
-                    "Accuracy": accuracy_score(y_test, preds),
-                    "Precision": precision_score(y_test, preds,
-                                                 average="weighted", zero_division=0),
-                    "Recall": recall_score(y_test, preds,
-                                           average="weighted", zero_division=0),
-                    "F1-Score": f1_score(y_test, preds,
-                                         average="weighted", zero_division=0),
+                    "Accuracy": acc,
+                    "Precision": prec,
+                    "Recall": rec,
+                    "F1-Score": f1,
+                    "F1-Weighted": f1_weighted,
                     "CV F1 (mean±std)": cv_mean_str,
                     "Training Time (s)": round(elapsed, 3),
                     "_predictions": preds,
                     "_model": model,
-                    "_sort_key": f1_score(y_test, preds,
-                                           average="weighted", zero_division=0),
+                    "_sort_key": f1,
                 }
             else:
+                r2 = r2_score(y_test, preds)
+                mae = mean_absolute_error(y_test, preds)
                 rmse = float(np.sqrt(mean_squared_error(y_test, preds)))
+
                 record = {
                     "Model": spec["name"],
                     "Family": spec["family"],
-                    "R²": r2_score(y_test, preds),
-                    "MAE": mean_absolute_error(y_test, preds),
+                    "R²": r2,
+                    "MAE": mae,
                     "RMSE": rmse,
                     "CV R² (mean±std)": cv_mean_str,
                     "Training Time (s)": round(elapsed, 3),
                     "_predictions": preds,
                     "_model": model,
-                    "_sort_key": r2_score(y_test, preds),
+                    "_sort_key": r2,
                 }
 
             trained.append(record)
@@ -524,12 +492,10 @@ def train_all_models(X_train, X_test, y_train, y_test,
 
 
 def tune_best_model(best_model, best_name, X_train, y_train,
-                    task_type, progress_bar):
+                    task_type, progress_bar=None):
     """Tune hyperparameters for the winning model using GridSearchCV."""
-    progress_bar.progress(
-        0.95,
-        text=f"Tuning hyperparameters for {best_name}…",
-    )
+    if progress_bar:
+        progress_bar.progress(0.95, text=f"Tuning hyperparameters for {best_name}…")
 
     grids = (CLASSIFICATION_PARAM_GRIDS
              if task_type == "classification"
@@ -569,7 +535,7 @@ def tune_best_model(best_model, best_name, X_train, y_train,
 
 
 def get_feature_importance(model, X_test, y_test, feature_names, task_type):
-    """Extract feature importance from trained estimator."""
+    """Extract feature importance using tree impurity, model weights, or permutation importance."""
     y_arr = y_test.values if hasattr(y_test, "values") else np.asarray(y_test)
 
     if hasattr(model, "feature_importances_"):
@@ -595,7 +561,7 @@ def get_feature_importance(model, X_test, y_test, feature_names, task_type):
             n_jobs=1,
         )
         values = perm.importances_mean
-        method = "Permutation importance score drop"
+        method = "Permutation importance score drop (predictive association)"
 
     importance = (
         pd.DataFrame({"Feature": feature_names, "Importance": values})
@@ -603,3 +569,19 @@ def get_feature_importance(model, X_test, y_test, feature_names, task_type):
         .reset_index(drop=True)
     )
     return importance, method
+
+
+def export_model_artifact(model, pipeline, target_encoder, col_info, task_type):
+    """Serialize model, preprocessing pipeline, and metadata into a pickle byte buffer."""
+    artifact = {
+        "model": model,
+        "preprocessing_pipeline": pipeline,
+        "target_encoder": target_encoder,
+        "col_info": col_info,
+        "task_type": task_type,
+        "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    buf = io.BytesIO()
+    pickle.dump(artifact, buf)
+    buf.seek(0)
+    return buf.getvalue()

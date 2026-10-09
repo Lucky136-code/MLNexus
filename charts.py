@@ -1,5 +1,5 @@
 """
-Plotly visualization functions for ML models.
+Plotly visualization functions for MLNexus platform (Light Theme Dashboard).
 """
 
 import numpy as np
@@ -12,75 +12,91 @@ MAX_CORRELATION_COLS = 15
 MAX_IMPORTANCE_FEATURES = 15
 
 
-# Classification charts
 def plot_model_comparison_clf(results_df):
-    """Bar chart comparing classification metrics across models."""
-    melted = results_df.melt(
+    """Horizontal bar chart comparing classification metrics across models."""
+    df = results_df.copy()
+    df = df.sort_values("F1-Score", ascending=True)
+
+    melted = df.melt(
         id_vars="Model",
         value_vars=["Accuracy", "Precision", "Recall", "F1-Score"],
         var_name="Metric", value_name="Score",
     )
     fig = px.bar(
-        melted, x="Model", y="Score", color="Metric",
-        barmode="group", template="plotly_white",
-        category_orders={"Model": results_df["Model"].tolist()},
-        color_discrete_sequence=px.colors.qualitative.Set2,
+        melted, y="Model", x="Score", color="Metric",
+        barmode="group", orientation="h",
+        template="plotly_white",
+        color_discrete_sequence=["#4f46e5", "#10b981", "#f59e0b", "#ec4899"],
         hover_data={"Score": ":.4f"},
     )
     fig.update_layout(
         title="Classification — Model Performance Comparison",
-        yaxis_range=[0, 1.05], yaxis_title="Score",
-        xaxis_title="Model", legend_title="Metric",
-        height=460, hovermode="x unified",
+        xaxis_range=[0, 1.05], xaxis_title="Score",
+        yaxis_title=None, legend_title="Metric",
+        height=max(460, len(results_df) * 32),
+        hovermode="y unified",
+        margin=dict(l=10, r=10, t=50, b=40),
     )
     return fig
 
 
 def plot_confusion_matrix(cm, class_names, best_name):
-    """Confusion matrix heatmap for the best classifier."""
+    """Confusion matrix heatmap with explicit label ordering and annotations."""
+    if class_names is None:
+        class_names = [f"Class {i}" for i in range(cm.shape[0])]
+    else:
+        class_names = [str(c) for c in class_names]
+
+    x_labels = [f"Pred: {c}" for c in class_names]
+    y_labels = [f"Actual: {c}" for c in class_names]
+
+    total = np.sum(cm)
+    text_matrix = []
+    for i in range(cm.shape[0]):
+        row_text = []
+        for j in range(cm.shape[1]):
+            val = cm[i, j]
+            pct = (val / total * 100) if total > 0 else 0
+            row_text.append(f"<b>{val}</b><br>({pct:.1f}%)")
+        text_matrix.append(row_text)
+
     fig = px.imshow(
-        cm, x=class_names, y=class_names,
-        labels=dict(x="Predicted label", y="Actual label", color="Count"),
-        color_continuous_scale="Blues", text_auto=True,
+        cm, x=x_labels, y=y_labels,
+        labels=dict(x="Predicted Label", y="Actual Label", color="Count"),
+        color_continuous_scale="Blues", text_auto=False,
         template="plotly_white", aspect="auto",
     )
+    fig.update_traces(text=text_matrix, texttemplate="%{text}")
     fig.update_layout(
         title=f"Confusion Matrix — {best_name}", height=460,
-        xaxis_nticks=len(class_names), yaxis_nticks=len(class_names),
+        margin=dict(l=10, r=10, t=50, b=40),
     )
     return fig
 
 
-# Regression charts
 def plot_model_comparison_reg(results_df):
     """Bar chart comparing regression metrics across models."""
+    df = results_df.copy().sort_values("R²", ascending=True)
+    models = df["Model"].tolist()
     fig = go.Figure()
-    colors = px.colors.qualitative.Set2
-    models = results_df["Model"].tolist()
 
-    for idx, (col, name) in enumerate([("R²", "R² (left axis)"),
-                                        ("MAE", "MAE (right axis)"),
-                                        ("RMSE", "RMSE (right axis)")]):
-        yaxis = "y" if col == "R²" else "y2"
-        fig.add_trace(go.Bar(
-            name=name,
-            x=models,
-            y=results_df[col],
-            yaxis=yaxis,
-            marker_color=colors[idx % len(colors)],
-            hovertemplate=f"<b>%{{x}}</b><br>{col}: %{{y:.4f}}<extra></extra>",
-        ))
+    fig.add_trace(go.Bar(
+        name="R² (Left axis, higher=better)",
+        y=models,
+        x=df["R²"],
+        orientation="h",
+        marker_color="#4f46e5",
+        hovertemplate="<b>%{y}</b><br>R²: %{x:.4f}<extra></extra>",
+    ))
 
     fig.update_layout(
-        barmode="group",
         template="plotly_white",
-        title="Regression — Model Performance Comparison",
-        yaxis=dict(title="R²", range=[None, 1.05]),
-        yaxis2=dict(title="MAE / RMSE", overlaying="y", side="right"),
+        title="Regression — R² Metric Comparison",
+        xaxis=dict(title="R² Score", range=[None, 1.05]),
         legend_title="Metric",
-        height=460,
-        hovermode="x unified",
-        xaxis_title="Model",
+        height=max(440, len(results_df) * 30),
+        yaxis_title=None,
+        margin=dict(l=10, r=10, t=50, b=40),
     )
     return fig
 
@@ -100,13 +116,14 @@ def plot_actual_vs_predicted(y_test, best_preds, best_name):
     fig.add_trace(go.Scatter(
         x=[lo, hi], y=[lo, hi],
         mode="lines",
-        line=dict(color="red", dash="dash", width=1.5),
-        name="Perfect prediction",
+        line=dict(color="#ef4444", dash="dash", width=2),
+        name="Perfect Prediction Line",
         hoverinfo="skip",
     ))
     fig.update_layout(
         title=f"Actual vs Predicted — {best_name}",
         height=440,
+        margin=dict(l=10, r=10, t=50, b=40),
     )
     return fig
 
@@ -122,46 +139,52 @@ def plot_residuals(y_test, best_preds, best_name):
         color_discrete_sequence=["#10b981"],
         hover_data={"Predicted": ":.4f", "Residual": ":.4f"},
     )
-    fig.add_hline(y=0, line_dash="dash", line_color="red", line_width=1.5)
+    fig.add_hline(y=0, line_dash="dash", line_color="#ef4444", line_width=2)
     fig.update_layout(
-        title=f"Residual Plot — {best_name}",
+        title=f"Residual Diagnostic Plot — {best_name}",
         height=420,
+        margin=dict(l=10, r=10, t=50, b=40),
     )
     return fig
 
 
-# Shared charts
 def plot_feature_importance(importance, method):
-    """Bar chart of top feature importances."""
+    """Horizontal bar chart of feature importances."""
     top = importance.head(MAX_IMPORTANCE_FEATURES).iloc[::-1]
     fig = px.bar(
         top, x="Importance", y="Feature", orientation="h",
-        color="Importance", color_continuous_scale="Viridis",
+        color="Importance", color_continuous_scale="Purples",
         template="plotly_white",
         hover_data={"Importance": ":.4f"},
     )
     fig.update_layout(
-        title=f"Top {len(top)} Feature Importance",
-        xaxis_title="Importance score", yaxis_title=None,
-        height=480, coloraxis_showscale=False,
+        title=f"Top {len(top)} Feature Importance Rankings",
+        xaxis_title="Importance Score", yaxis_title=None,
+        height=460, coloraxis_showscale=False,
+        margin=dict(l=10, r=10, t=50, b=40),
     )
     return fig
 
 
 def plot_training_time(results_df):
-    """Bar chart of training time per model."""
+    """Bar chart of training time per model with log scale support."""
     plot_df = results_df.copy()
     plot_df["Training Time (s)"] = plot_df["Training Time (s)"].clip(lower=0.001)
+    plot_df = plot_df.sort_values("Training Time (s)", ascending=True)
+
     fig = px.bar(
-        plot_df.sort_values("Training Time (s)"),
-        x="Model", y="Training Time (s)", color="Family",
+        plot_df,
+        y="Model", x="Training Time (s)", color="Family",
+        orientation="h",
         template="plotly_white",
         color_discrete_sequence=px.colors.qualitative.Set2,
         hover_data={"Training Time (s)": ":.3f"},
     )
     fig.update_layout(
-        title="Training Time per Model (seconds)",
-        yaxis_type="log", height=420, xaxis_title=None,
+        title="Training Execution Time per Model (Seconds, Log Scale)",
+        xaxis_type="log", height=max(420, len(results_df) * 28),
+        yaxis_title=None, xaxis_title="Training Time (seconds)",
+        margin=dict(l=10, r=10, t=50, b=40),
     )
     return fig
 
@@ -177,7 +200,7 @@ def plot_correlation_heatmap(df):
         zmin=-1, zmax=1, template="plotly_white", aspect="auto",
         labels=dict(color="Correlation"),
     )
-    fig.update_layout(title="Correlation Heatmap", height=560)
+    fig.update_layout(title="Feature Correlation Heatmap", height=540, margin=dict(l=10, r=10, t=50, b=40))
     return fig, numeric_df.shape[1]
 
 
@@ -207,38 +230,41 @@ def plot_cv_comparison(results_df, task_type):
         var_name="Type", value_name="Score",
     )
     melted["Type"] = melted["Type"].replace(
-        {test_col: "Test score", "CV mean": f"CV mean ({CV_FOLDS}-fold)"}
+        {test_col: "Test Score", "CV mean": f"CV Mean ({CV_FOLDS}-fold)"}
     )
     fig = px.bar(
-        melted, x="Model", y="Score", color="Type",
-        barmode="group", template="plotly_white",
+        melted, y="Model", x="Score", color="Type",
+        barmode="group", orientation="h", template="plotly_white",
         color_discrete_sequence=["#4f46e5", "#10b981"],
         hover_data={"Score": ":.4f"},
         category_orders={"Model": df["Model"].tolist()},
     )
     fig.update_layout(
-        title=f"Test Score vs {CV_FOLDS}-Fold CV Score — {label}",
-        yaxis_range=[0, 1.05] if task_type == "classification" else None,
-        height=440, hovermode="x unified",
+        title=f"Held-out Test Score vs {CV_FOLDS}-Fold CV Score — {label}",
+        xaxis_range=[0, 1.05] if task_type == "classification" else None,
+        height=max(440, len(df) * 32),
+        margin=dict(l=10, r=10, t=50, b=40),
+        yaxis_title=None,
     )
     return fig
 
 
-# Unsupervised charts
 def plot_model_comparison_unsupervised(results_df):
-    """Bar chart comparing unsupervised metrics across algorithms."""
-    df = results_df.copy()
+    """Horizontal bar chart comparing unsupervised metrics across algorithms."""
+    df = results_df.copy().sort_values("Silhouette Score", ascending=True)
     fig = px.bar(
-        df, x="Model", y="Silhouette Score", color="Family",
+        df, y="Model", x="Silhouette Score", color="Family",
+        orientation="h",
         template="plotly_white",
         color_discrete_sequence=px.colors.qualitative.Set2,
         hover_data={"Silhouette Score": ":.4f", "Clusters / Outliers": True},
     )
     fig.update_layout(
-        title="Unsupervised — Silhouette & Quality Score Comparison",
-        yaxis_title="Silhouette Score / Variance Explained",
-        xaxis_title="Algorithm", legend_title="Category",
-        height=460, hovermode="x unified",
+        title="Unsupervised — Silhouette & Variance Explained Quality Comparison",
+        xaxis_title="Silhouette Score / Variance Ratio",
+        yaxis_title=None, legend_title="Category",
+        height=max(460, len(results_df) * 32),
+        margin=dict(l=10, r=10, t=50, b=40),
     )
     return fig
 
@@ -267,7 +293,8 @@ def plot_cluster_pca_scatter(X_scaled, labels, best_name):
         color_discrete_sequence=px.colors.qualitative.Plotly,
     )
     fig.update_layout(
-        title=f"2D Projection & Clustering Map — {best_name}",
+        title=f"2D PCA Projection & Cluster Allocation — {best_name}",
         height=460,
+        margin=dict(l=10, r=10, t=50, b=40),
     )
     return fig
