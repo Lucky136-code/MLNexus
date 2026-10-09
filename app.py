@@ -1153,6 +1153,19 @@ with st.sidebar:
                 st.session_state["task_type"] = auto_detect_task_type(df, st.session_state["target_col"])
                 task_type = st.session_state["task_type"]
 
+        # Advanced Pipeline Controls (only for supervised tasks)
+        if task_type != "unsupervised":
+            st.markdown('<div class="sb-section">Advanced Settings</div>', unsafe_allow_html=True)
+            test_size_pct = st.slider(
+                "Test split %", min_value=10, max_value=40, value=20, step=5,
+                key="sb_test_size_pct",
+                help="Percentage of data held out for testing",
+            )
+            run_cv = st.checkbox("Enable 3-Fold Cross-Validation", value=False, key="sb_run_cv",
+                                 help="Run 3-fold CV on training data for more reliable performance estimates")
+            run_tuning = st.checkbox("Tune Best Model (GridSearch)", value=False, key="sb_run_tuning",
+                                     help="Run hyperparameter tuning on the winning model after ranking")
+
         st.markdown("")
         start_training_sb = st.button(
             "⚡ Start AutoML Pipeline", type="primary", key="sb_start_automl_btn", on_click=trigger_automl_callback

@@ -324,14 +324,24 @@ def build_regressors(n_train):
 def build_unsupervised_models(n_samples, n_features):
     """Return unsupervised model specifications."""
     k = min(5, max(2, n_samples // 10))
+    pca_n = min(3, max(1, n_features))
+    # TruncatedSVD requires n_components < n_features strictly
+    svd_n = min(3, max(1, n_features - 1)) if n_features > 1 else None
+
     specs = [
         ("K-Means Clustering", KMeans(n_clusters=k, random_state=RANDOM_STATE, n_init=10), "Clustering", "clustering"),
         ("Agglomerative Clustering", AgglomerativeClustering(n_clusters=k), "Clustering", "clustering"),
         ("DBSCAN Clustering", DBSCAN(eps=0.5, min_samples=3), "Clustering", "clustering"),
         ("Gaussian Mixture Model", GaussianMixture(n_components=k, random_state=RANDOM_STATE), "Clustering", "clustering"),
         ("BIRCH Clustering", Birch(n_clusters=k), "Clustering", "clustering"),
-        ("Principal Component Analysis", PCA(n_components=min(3, max(1, n_features)), random_state=RANDOM_STATE), "Dimensionality Reduction", "dim_reduction"),
-        ("Truncated SVD", TruncatedSVD(n_components=min(3, max(1, n_features - 1 if n_features > 1 else 1)), random_state=RANDOM_STATE), "Dimensionality Reduction", "dim_reduction"),
+        ("Principal Component Analysis", PCA(n_components=pca_n), "Dimensionality Reduction", "dim_reduction"),
+    ]
+    # Only add TruncatedSVD if we have more than 1 feature
+    if svd_n is not None:
+        specs.append(
+            ("Truncated SVD", TruncatedSVD(n_components=svd_n, random_state=RANDOM_STATE), "Dimensionality Reduction", "dim_reduction"),
+        )
+    specs += [
         ("Isolation Forest", IsolationForest(random_state=RANDOM_STATE, contamination=0.05), "Anomaly Detection", "anomaly"),
         ("One-Class SVM", OneClassSVM(gamma="scale", nu=0.05), "Anomaly Detection", "anomaly"),
         ("Local Outlier Factor", LocalOutlierFactor(n_neighbors=min(20, max(2, n_samples - 1)), novelty=True), "Anomaly Detection", "anomaly"),
@@ -386,7 +396,9 @@ def train_unsupervised_models(X_scaled, progress_bar=None):
                 sil = exp_var
                 ch = np.nan
                 db = np.nan
-                cluster_desc = f"{model.n_components_} Components"
+                # Safe component count: PCA uses n_components_, TruncatedSVD uses n_components
+                n_comp = getattr(model, "n_components_", None) or getattr(model, "n_components", "?")
+                cluster_desc = f"{n_comp} Components"
                 sort_val = exp_var
 
             elif cat == "anomaly":
