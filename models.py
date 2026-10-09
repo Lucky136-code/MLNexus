@@ -6,6 +6,8 @@ import time
 
 import numpy as np
 import pandas as pd
+from sklearn.cluster import (AgglomerativeClustering, Birch, DBSCAN, KMeans)
+from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.discriminant_analysis import (LinearDiscriminantAnalysis,
                                            QuadraticDiscriminantAnalysis)
 from sklearn.ensemble import (AdaBoostClassifier, AdaBoostRegressor,
@@ -13,21 +15,25 @@ from sklearn.ensemble import (AdaBoostClassifier, AdaBoostRegressor,
                               GradientBoostingClassifier,
                               GradientBoostingRegressor,
                               HistGradientBoostingClassifier,
-                              HistGradientBoostingRegressor,
+                              HistGradientBoostingRegressor, IsolationForest,
                               RandomForestClassifier, RandomForestRegressor)
 from sklearn.inspection import permutation_importance
 from sklearn.linear_model import (Lasso, LinearRegression,
                                   LogisticRegression, Ridge,
                                   RidgeClassifier, SGDClassifier,
                                   SGDRegressor)
-from sklearn.metrics import (accuracy_score, f1_score, mean_absolute_error,
-                             mean_squared_error, precision_score, r2_score,
-                             recall_score)
+from sklearn.metrics import (accuracy_score, calinski_harabasz_score,
+                             davies_bouldin_score, f1_score,
+                             mean_absolute_error, mean_squared_error,
+                             precision_score, r2_score, recall_score,
+                             silhouette_score)
+from sklearn.mixture import GaussianMixture
 from sklearn.model_selection import GridSearchCV, cross_val_score
 from sklearn.naive_bayes import GaussianNB
-from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
+from sklearn.neighbors import (KNeighborsClassifier, KNeighborsRegressor,
+                               LocalOutlierFactor)
 from sklearn.neural_network import MLPClassifier, MLPRegressor
-from sklearn.svm import SVC, SVR, LinearSVC
+from sklearn.svm import SVC, SVR, LinearSVC, OneClassSVM
 from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
 
 RANDOM_STATE = 42
@@ -130,6 +136,39 @@ REGRESSION_INFO = {
     ),
 }
 
+UNSUPERVISED_INFO = {
+    "K-Means Clustering": (
+        "Partitions dataset into K distinct clusters by minimizing variance within each cluster (sum of squared Euclidean distances to centroids)."
+    ),
+    "Agglomerative Clustering": (
+        "Hierarchical bottom-up clustering algorithm that recursively merges pairs of clusters based on distance metric."
+    ),
+    "DBSCAN Clustering": (
+        "Density-based spatial clustering that groups closely packed points and detects low-density noise/outlier points."
+    ),
+    "Gaussian Mixture Model": (
+        "Probabilistic generative clustering model fitting a mixture of multi-dimensional Gaussian distributions."
+    ),
+    "BIRCH Clustering": (
+        "Memory-efficient hierarchical clustering using Clustering Feature Trees, ideal for fast scalable clustering."
+    ),
+    "Principal Component Analysis": (
+        "Linear dimensionality reduction projecting data into orthogonal principal components to maximize captured variance."
+    ),
+    "Truncated SVD": (
+        "Dimensionality reduction using Singular Value Decomposition on feature matrices without mean centering."
+    ),
+    "Isolation Forest": (
+        "Tree-based anomaly detection algorithm isolating outliers by randomly partitioning feature values."
+    ),
+    "One-Class SVM": (
+        "Unsupervised support vector model learning a tight decision boundary surrounding normal data points to detect novelties."
+    ),
+    "Local Outlier Factor": (
+        "Measures local density deviation of a sample relative to its k-nearest neighbors to detect isolated outliers."
+    ),
+}
+
 CLASSIFICATION_PARAM_GRIDS = {
     "Logistic Regression":            {"C": [0.1, 1.0, 10.0]},
     "Ridge Classifier":               {"alpha": [0.1, 1.0, 10.0]},
@@ -176,6 +215,13 @@ REGRESSION_RESULT_COLUMNS = [
     "Rank", "Model", "Family",
     "R²", "MAE", "RMSE",
     "CV R² (mean±std)",
+    "Training Time (s)",
+]
+
+UNSUPERVISED_RESULT_COLUMNS = [
+    "Rank", "Model", "Family",
+    "Silhouette Score", "Calinski-Harabasz", "Davies-Bouldin",
+    "Clusters / Outliers",
     "Training Time (s)",
 ]
 
@@ -273,6 +319,112 @@ def build_regressors(n_train):
     ]
     return [{"name": n, "estimator": e, "family": f, "cap": c}
             for n, e, f, c in specs]
+
+
+def build_unsupervised_models(n_samples, n_features):
+    """Return unsupervised model specifications."""
+    k = min(5, max(2, n_samples // 10))
+    specs = [
+        ("K-Means Clustering", KMeans(n_clusters=k, random_state=RANDOM_STATE, n_init=10), "Clustering", "clustering"),
+        ("Agglomerative Clustering", AgglomerativeClustering(n_clusters=k), "Clustering", "clustering"),
+        ("DBSCAN Clustering", DBSCAN(eps=0.5, min_samples=3), "Clustering", "clustering"),
+        ("Gaussian Mixture Model", GaussianMixture(n_components=k, random_state=RANDOM_STATE), "Clustering", "clustering"),
+        ("BIRCH Clustering", Birch(n_clusters=k), "Clustering", "clustering"),
+        ("Principal Component Analysis", PCA(n_components=min(3, max(1, n_features)), random_state=RANDOM_STATE), "Dimensionality Reduction", "dim_reduction"),
+        ("Truncated SVD", TruncatedSVD(n_components=min(3, max(1, n_features - 1 if n_features > 1 else 1)), random_state=RANDOM_STATE), "Dimensionality Reduction", "dim_reduction"),
+        ("Isolation Forest", IsolationForest(random_state=RANDOM_STATE, contamination=0.05), "Anomaly Detection", "anomaly"),
+        ("One-Class SVM", OneClassSVM(gamma="scale", nu=0.05), "Anomaly Detection", "anomaly"),
+        ("Local Outlier Factor", LocalOutlierFactor(n_neighbors=min(20, max(2, n_samples - 1)), novelty=True), "Anomaly Detection", "anomaly"),
+    ]
+    return [{"name": n, "estimator": e, "family": f, "category": cat} for n, e, f, cat in specs]
+
+
+def train_unsupervised_models(X_scaled, progress_bar=None):
+    """Train unsupervised models and evaluate cluster/reduction/anomaly metrics."""
+    n_samples, n_features = X_scaled.shape
+    specs = build_unsupervised_models(n_samples, n_features)
+    trained, failed = [], []
+    total = len(specs)
+
+    for i, spec in enumerate(specs):
+        if progress_bar:
+            progress_bar.progress(
+                0.30 + 0.60 * (i / total),
+                text=f"Training {spec['name']} ({i + 1}/{total})…",
+            )
+        try:
+            start = time.perf_counter()
+            model = spec["estimator"]
+            cat = spec["category"]
+            preds = None
+            sil, ch, db = 0.0, 0.0, 0.0
+            cluster_desc = "—"
+
+            if cat == "clustering":
+                if hasattr(model, "fit_predict"):
+                    preds = model.fit_predict(X_scaled)
+                else:
+                    model.fit(X_scaled)
+                    preds = model.predict(X_scaled)
+
+                valid_labels = set(preds) - {-1}
+                n_clusters = len(valid_labels)
+                cluster_desc = f"{n_clusters} Clusters"
+
+                if 2 <= n_clusters < len(X_scaled):
+                    try:
+                        sil = float(silhouette_score(X_scaled, preds))
+                        ch = float(calinski_harabasz_score(X_scaled, preds))
+                        db = float(davies_bouldin_score(X_scaled, preds))
+                    except Exception:
+                        pass
+                sort_val = sil
+
+            elif cat == "dim_reduction":
+                model.fit(X_scaled)
+                exp_var = float(np.sum(model.explained_variance_ratio_))
+                sil = exp_var
+                ch = np.nan
+                db = np.nan
+                cluster_desc = f"{model.n_components_} Components"
+                sort_val = exp_var
+
+            elif cat == "anomaly":
+                if hasattr(model, "fit_predict"):
+                    preds = model.fit_predict(X_scaled)
+                else:
+                    model.fit(X_scaled)
+                    preds = model.predict(X_scaled)
+
+                n_outliers = int(np.sum(preds == -1))
+                pct = round(100 * n_outliers / len(X_scaled), 1)
+                cluster_desc = f"{n_outliers} Outliers ({pct}%)"
+                sil = 1.0 - (n_outliers / len(X_scaled))
+                ch = np.nan
+                db = np.nan
+                sort_val = sil
+
+            elapsed = time.perf_counter() - start
+
+            record = {
+                "Model": spec["name"],
+                "Family": spec["family"],
+                "Silhouette Score": round(sil, 4) if not np.isnan(sil) else 0.0,
+                "Calinski-Harabasz": round(ch, 2) if not np.isnan(ch) else np.nan,
+                "Davies-Bouldin": round(db, 4) if not np.isnan(db) else np.nan,
+                "Clusters / Outliers": cluster_desc,
+                "Training Time (s)": round(elapsed, 3),
+                "_predictions": preds,
+                "_model": model,
+                "_sort_key": sort_val,
+                "_category": cat,
+            }
+            trained.append(record)
+
+        except Exception as exc:
+            failed.append(f"{spec['name']}: {exc}")
+
+    return trained, failed
 
 
 def train_all_models(X_train, X_test, y_train, y_test,

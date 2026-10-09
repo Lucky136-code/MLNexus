@@ -222,3 +222,52 @@ def plot_cv_comparison(results_df, task_type):
         height=440, hovermode="x unified",
     )
     return fig
+
+
+# Unsupervised charts
+def plot_model_comparison_unsupervised(results_df):
+    """Bar chart comparing unsupervised metrics across algorithms."""
+    df = results_df.copy()
+    fig = px.bar(
+        df, x="Model", y="Silhouette Score", color="Family",
+        template="plotly_white",
+        color_discrete_sequence=px.colors.qualitative.Set2,
+        hover_data={"Silhouette Score": ":.4f", "Clusters / Outliers": True},
+    )
+    fig.update_layout(
+        title="Unsupervised — Silhouette & Quality Score Comparison",
+        yaxis_title="Silhouette Score / Variance Explained",
+        xaxis_title="Algorithm", legend_title="Category",
+        height=460, hovermode="x unified",
+    )
+    return fig
+
+
+def plot_cluster_pca_scatter(X_scaled, labels, best_name):
+    """2D PCA Projection showing clusters or anomaly predictions."""
+    from sklearn.decomposition import PCA
+    n_comp = min(2, X_scaled.shape[1])
+    pca = PCA(n_components=n_comp, random_state=42)
+    coords = pca.fit_transform(X_scaled)
+
+    if labels is None:
+        labels_str = ["Point"] * len(X_scaled)
+    else:
+        labels_str = [f"Cluster {l}" if l != -1 else "Noise/Outlier" for l in labels]
+
+    df_pca = pd.DataFrame({
+        "PCA Component 1": coords[:, 0],
+        "PCA Component 2": coords[:, 1] if coords.shape[1] > 1 else np.zeros(len(coords)),
+        "Group": labels_str
+    })
+
+    fig = px.scatter(
+        df_pca, x="PCA Component 1", y="PCA Component 2", color="Group",
+        template="plotly_white", opacity=0.8,
+        color_discrete_sequence=px.colors.qualitative.Plotly,
+    )
+    fig.update_layout(
+        title=f"2D Projection & Clustering Map — {best_name}",
+        height=460,
+    )
+    return fig

@@ -10,23 +10,27 @@ import streamlit as st
 from sklearn.metrics import confusion_matrix
 from sklearn.model_selection import train_test_split
 
-from charts import (plot_actual_vs_predicted, plot_confusion_matrix,
-                    plot_correlation_heatmap, plot_cv_comparison,
-                    plot_feature_importance, plot_model_comparison_clf,
-                    plot_model_comparison_reg, plot_residuals,
+from charts import (plot_actual_vs_predicted, plot_cluster_pca_scatter,
+                    plot_confusion_matrix, plot_correlation_heatmap,
+                    plot_cv_comparison, plot_feature_importance,
+                    plot_model_comparison_clf, plot_model_comparison_reg,
+                    plot_model_comparison_unsupervised, plot_residuals,
                     plot_training_time)
 from models import (ALGORITHM_INFO, CLASSIFICATION_RESULT_COLUMNS,
                     REGRESSION_INFO, REGRESSION_RESULT_COLUMNS,
-                    get_feature_importance, train_all_models, tune_best_model)
-from preprocessing import (coerce_object_columns_to_numeric,
+                    UNSUPERVISED_INFO, UNSUPERVISED_RESULT_COLUMNS,
+                    get_feature_importance, train_all_models,
+                    train_unsupervised_models, tune_best_model)
+from preprocessing import (auto_detect_task_type, coerce_object_columns_to_numeric,
                             fit_transform_train, load_dataset,
-                            prepare_features_and_target, transform_test,
-                            validate_dataset)
+                            prepare_features_and_target, prepare_unsupervised_features,
+                            transform_test, validate_dataset)
 
 warnings.filterwarnings("ignore")
 
 MAX_ROWS     = 10_000
 RANDOM_STATE = 42
+TASK_OPTIONS = ["Classification", "Regression", "Unsupervised"]
 
 # Model family styling
 FAMILY_STYLE = {
@@ -37,6 +41,9 @@ FAMILY_STYLE = {
     "Tree / Ensemble":        ("bdg-tree",    "Tree"),
     "Neural Network":         ("bdg-neural",  "Neural"),
     "Discriminant Analysis":  ("bdg-disc",    "Disc."),
+    "Clustering":             ("bdg-cluster", "Cluster"),
+    "Dimensionality Reduction": ("bdg-dim",   "DimRed"),
+    "Anomaly Detection":      ("bdg-anomaly", "Anomaly"),
 }
 
 # SVG Icons
@@ -494,13 +501,16 @@ div[data-testid="stMetric"] [data-testid="stMetricValue"] {
     padding:0.25rem 0.65rem; border-radius:6px;
     white-space:nowrap; flex-shrink:0;
 }
-.bdg-linear { background:#dbeafe; color:#1e40af; }
-.bdg-svm    { background:#fce7f3; color:#9d174d; }
-.bdg-bayes  { background:#ffedd5; color:#9a3412; }
-.bdg-knn    { background:#fef9c3; color:#854d0e; }
-.bdg-tree   { background:#dcfce7; color:#166534; }
-.bdg-neural { background:#ede9fe; color:#5b21b6; }
-.bdg-disc   { background:#e0e7ff; color:#3730a3; }
+.bdg-linear  { background:#dbeafe; color:#1e40af; }
+.bdg-svm     { background:#fce7f3; color:#9d174d; }
+.bdg-bayes   { background:#ffedd5; color:#9a3412; }
+.bdg-knn     { background:#fef9c3; color:#854d0e; }
+.bdg-tree    { background:#dcfce7; color:#166534; }
+.bdg-neural  { background:#ede9fe; color:#5b21b6; }
+.bdg-disc    { background:#e0e7ff; color:#3730a3; }
+.bdg-cluster { background:#e0f2fe; color:#0369a1; }
+.bdg-dim     { background:#f3e8ff; color:#6b21a8; }
+.bdg-anomaly { background:#ffe4e6; color:#be123c; }
 
 .ag-lb-bar-wrap { flex:2; display:flex; align-items:center; gap:0.65rem; min-width:90px; }
 .ag-lb-bar-track {
@@ -656,7 +666,9 @@ def family_badge(family: str) -> str:
 
 def leaderboard_html(results_df: pd.DataFrame,
                      task_type: str, best_name: str) -> str:
-    primary = "F1-Score" if task_type == "classification" else "R²"
+    primary = ("F1-Score" if task_type == "classification"
+               else ("R²" if task_type == "regression"
+                     else "Silhouette Score"))
     max_s   = max(results_df[primary].max(), 1e-9)
 
     header = """
@@ -718,10 +730,19 @@ def explain_card_html(name: str, p_label: str,
                 f'<div class="ag-met-chip"><span class="mv">{row["Precision"]:.4f}</span><span class="ml">Precision</span></div>'
                 f'<div class="ag-met-chip"><span class="mv">{row["Recall"]:.4f}</span><span class="ml">Recall</span></div>'
             )
-        else:
+        elif rt == "regression":
             extras = (
                 f'<div class="ag-met-chip"><span class="mv">{row["MAE"]:.4f}</span><span class="ml">MAE</span></div>'
                 f'<div class="ag-met-chip"><span class="mv">{row["RMSE"]:.4f}</span><span class="ml">RMSE</span></div>'
+            )
+        else:
+            ch_val = row["Calinski-Harabasz"]
+            db_val = row["Davies-Bouldin"]
+            ch_str = f"{ch_val:.1f}" if pd.notna(ch_val) else "N/A"
+            db_str = f"{db_val:.4f}" if pd.notna(db_val) else "N/A"
+            extras = (
+                f'<div class="ag-met-chip"><span class="mv">{ch_str}</span><span class="ml">Calinski-Harabasz</span></div>'
+                f'<div class="ag-met-chip"><span class="mv">{db_str}</span><span class="ml">Davies-Bouldin</span></div>'
             )
     except Exception:
         extras = ""
@@ -752,6 +773,61 @@ def section(label: str) -> str:
 def run_automl(df, target_col, task_type, test_frac, run_cv, run_tuning, status_container=None):
     progress = st.progress(0.0, text="Starting pipeline…")
     try:
+        if task_type == "unsupervised":
+            if status_container:
+                status_container.write("📌 **Step 1/3** — Imputing missing values & feature scaling...")
+            progress.progress(0.15, text="Step 1/3 — Preparing features & scaling…")
+            X_scaled, col_info = prepare_unsupervised_features(df)
+
+            if status_container:
+                status_container.write("🤖 **Step 2/3** — Fitting 10 Unsupervised Learning algorithms (Clustering, PCA, Outlier Detection)...")
+            progress.progress(0.40, text="Step 2/3 — Training unsupervised models…")
+            trained, failed = train_unsupervised_models(X_scaled, progress)
+
+            if not trained:
+                st.error("All unsupervised models failed. Please check your dataset.")
+                return None
+
+            if status_container:
+                status_container.write("📊 **Step 3/3** — Evaluating Silhouette Scores & PCA cluster projections...")
+            progress.progress(0.90, text="Step 3/3 — Evaluating clusters & anomalies…")
+            trained.sort(key=lambda r: r["_sort_key"], reverse=True)
+            best = trained[0]
+            best_name = best["Model"]
+
+            results_df = pd.DataFrame(trained)[[c for c in UNSUPERVISED_RESULT_COLUMNS if c != "Rank"]]
+            results_df.insert(0, "Rank", range(1, len(results_df) + 1))
+
+            progress.progress(1.0, text="AutoML complete!")
+
+            return {
+                "task_type":         task_type,
+                "target":            "N/A (Unsupervised)",
+                "results_df":        results_df,
+                "best_name":         best_name,
+                "best_primary":      best["_sort_key"],
+                "best_time":         best["Training Time (s)"],
+                "best_predictions":  best["_predictions"],
+                "best_category":     best.get("_category", "clustering"),
+                "importance":        None,
+                "importance_method": None,
+                "cm":                None,
+                "col_info":          col_info,
+                "y_test":            None,
+                "X_scaled":          X_scaled,
+                "n_train":           len(X_scaled),
+                "n_test":            len(X_scaled),
+                "n_features":        X_scaled.shape[1],
+                "missing_imputed":   col_info["missing_before"],
+                "n_numeric":         len(col_info["numeric_cols"]),
+                "n_categorical":     len(col_info["categorical_cols"]),
+                "dropped_target":    0,
+                "subsampled":        False,
+                "failed":            failed,
+                "tuning_info":       None,
+                "run_cv":            False,
+            }
+
         # Step 1 — prepare
         if status_container:
             status_container.write("📌 **Step 1/5** — Preparing feature matrices & encoding target variable...")
@@ -911,23 +987,40 @@ if "should_run_automl" not in st.session_state:
 def trigger_automl_callback():
     st.session_state["should_run_automl"] = True
 
+NONE_UNSUPERVISED = "None (Unsupervised Learning)"
+
 def update_task_from_sb():
     st.session_state["task_type"] = st.session_state["sb_task_radio"].lower()
+    st.session_state["task_type_user_set"] = True
     st.session_state["automl_results"] = None
 
 def update_task_from_main():
     st.session_state["task_type"] = st.session_state["main_landing_task_radio"].lower()
+    st.session_state["task_type_user_set"] = True
+    st.session_state["automl_results"] = None
+
+def update_task_from_overview():
+    st.session_state["task_type"] = st.session_state["main_overview_task_radio"].lower()
+    st.session_state["task_type_user_set"] = True
     st.session_state["automl_results"] = None
 
 def update_target_from_sb():
     st.session_state["target_col"] = st.session_state["sb_target_col"]
     st.session_state["automl_results"] = None
+    if st.session_state["target_col"] == NONE_UNSUPERVISED:
+        st.session_state["task_type"] = "unsupervised"
+    elif not st.session_state.get("task_type_user_set", False):
+        st.session_state["task_type"] = auto_detect_task_type(st.session_state.get("_active_df"), st.session_state["target_col"])
 
 def update_target_from_main():
     st.session_state["target_col"] = st.session_state["main_overview_target_select"]
     if "sb_target_col" in st.session_state:
         st.session_state["sb_target_col"] = st.session_state["main_overview_target_select"]
     st.session_state["automl_results"] = None
+    if st.session_state["target_col"] == NONE_UNSUPERVISED:
+        st.session_state["task_type"] = "unsupervised"
+    elif not st.session_state.get("task_type_user_set", False):
+        st.session_state["task_type"] = auto_detect_task_type(st.session_state.get("_active_df"), st.session_state["target_col"])
 
 
 # Sidebar Controls
@@ -942,10 +1035,13 @@ with st.sidebar:
         unsafe_allow_html=True,
     )
 
+    cur_task_name = st.session_state.get("task_type", "classification").capitalize()
+    cur_task_idx = TASK_OPTIONS.index(cur_task_name) if cur_task_name in TASK_OPTIONS else 0
+
     st.markdown('<div class="sb-section">Task Mode</div>', unsafe_allow_html=True)
     sb_task = st.radio(
-        "Task type", ["Classification", "Regression"],
-        index=0 if st.session_state.get("task_type", "classification") == "classification" else 1,
+        "Task type", TASK_OPTIONS,
+        index=cur_task_idx,
         horizontal=True, label_visibility="collapsed", key="sb_task_radio",
         on_change=update_task_from_sb
     ).lower()
@@ -992,6 +1088,8 @@ with st.sidebar:
         except ValueError as exc:
             st.error(str(exc))
 
+    st.session_state["_active_df"] = df
+
     if df is not None:
         probs = validate_dataset(df)
         if probs:
@@ -1001,31 +1099,46 @@ with st.sidebar:
 
     # Clear previous pipeline results when new data is loaded
     if df is not None:
-        cache_key = f"{uploaded_name}_{task_type}"
+        cache_key = f"{uploaded_name}"
         if "loaded_key" not in st.session_state:
             st.session_state["loaded_key"] = cache_key
+            st.session_state["task_type_user_set"] = False
         elif st.session_state["loaded_key"] != cache_key:
             st.session_state["loaded_key"]     = cache_key
             st.session_state["automl_results"] = None
+            st.session_state["task_type_user_set"] = False
+            if "target_col" in st.session_state:
+                del st.session_state["target_col"]
 
         st.success(f"**{uploaded_name}**  \n{df.shape[0]:,} rows × {df.shape[1]} columns")
+
+        target_options = [NONE_UNSUPERVISED] + list(df.columns)
 
         common_targets = ("target","class","label","y","species","diagnosis",
                           "outcome","survived","purchased","price","salary",
                           "value","score","result")
-        default_idx = next(
+        default_col_idx = next(
             (i for i, c in enumerate(df.columns)
              if c.strip().lower() in common_targets),
             df.shape[1] - 1,
         )
+        default_target = df.columns[default_col_idx]
 
-        if "target_col" not in st.session_state or st.session_state["target_col"] not in df.columns:
-            st.session_state["target_col"] = df.columns[default_idx]
+        if "target_col" not in st.session_state or (st.session_state["target_col"] not in df.columns and st.session_state["target_col"] != NONE_UNSUPERVISED):
+            st.session_state["target_col"] = default_target
+
+        # Auto-detect task mode if not manually set by user
+        if not st.session_state.get("task_type_user_set", False):
+            st.session_state["task_type"] = auto_detect_task_type(df, st.session_state["target_col"])
+            task_type = st.session_state["task_type"]
+
+        cur_target = st.session_state.get("target_col", default_target)
+        sel_idx = 0 if cur_target == NONE_UNSUPERVISED else (target_options.index(cur_target) if cur_target in target_options else target_options.index(default_target))
 
         st.markdown('<div class="sb-section">Target Variable</div>', unsafe_allow_html=True)
         sb_target = st.selectbox(
-            "Target column", df.columns,
-            index=list(df.columns).index(st.session_state["target_col"]) if st.session_state["target_col"] in list(df.columns) else default_idx,
+            "Target column", target_options,
+            index=sel_idx,
             label_visibility="collapsed", key="sb_target_col",
             on_change=update_target_from_sb
         )
@@ -1035,6 +1148,9 @@ with st.sidebar:
         elif st.session_state["last_target"] != st.session_state["target_col"]:
             st.session_state["last_target"]    = st.session_state["target_col"]
             st.session_state["automl_results"] = None
+            if not st.session_state.get("task_type_user_set", False):
+                st.session_state["task_type"] = auto_detect_task_type(df, st.session_state["target_col"])
+                task_type = st.session_state["task_type"]
 
         st.markdown("")
         start_training_sb = st.button(
@@ -1072,8 +1188,8 @@ if df is None:
     st.markdown(
         '<div class="ag-hero">'
         '<div class="ag-hero-badge">⚡ Automated Machine Learning Platform</div>'
-        '<h1>Train & Rank 16 ML Models in <span class="ag-hero-gradient-text">1-Click</span></h1>'
-        '<p>Upload your dataset. MLNexus performs zero-leakage data preparation, fits 16 models, ranks leaderboard performance, and generates explainable AI metrics.</p>'
+        '<h1>Train & Rank ML Models in <span class="ag-hero-gradient-text">1-Click</span></h1>'
+        '<p>Upload your dataset. MLNexus performs zero-leakage data preparation, fits Classification, Regression, and Unsupervised algorithms, ranks leaderboard performance, and generates explainable AI metrics.</p>'
         '</div>',
         unsafe_allow_html=True,
     )
@@ -1095,9 +1211,10 @@ if df is None:
 
     with col_up1:
         st.markdown('<p style="font-weight:800; color:#0f172a; font-size:0.92rem; margin-bottom:0.4rem;">Select ML Task Mode</p>', unsafe_allow_html=True)
+        cur_landing_idx = TASK_OPTIONS.index(st.session_state.get("task_type", "classification").capitalize()) if st.session_state.get("task_type", "classification").capitalize() in TASK_OPTIONS else 0
         m_task = st.radio(
-            "Task Type", ["Classification", "Regression"],
-            index=0 if st.session_state.get("task_type", "classification") == "classification" else 1,
+            "Task Type", TASK_OPTIONS,
+            index=cur_landing_idx,
             horizontal=True, key="main_landing_task_radio",
             on_change=update_task_from_main
         ).lower()
@@ -1140,8 +1257,8 @@ if df is None:
     c1, c2, c3 = st.columns(3)
     cards = [
         (ICON_UPLOAD, "1. Zero-Leakage Preprocessing", "Automatic column typing, split-fitted mean/median imputation, and feature scaling without data leakage."),
-        (ICON_PREPROCESS, "2. 16 AutoML Algorithms", "Fits Linear, SVM, k-NN, Naive Bayes, Decision Trees, Random Forests, Neural Networks & Discriminant models."),
-        (ICON_COMPARE, "3. Explainable AI & Leaderboard", "Ranks performance scores, feature importance, confusion matrix, residuals, and exports 1-click reports."),
+        (ICON_PREPROCESS, "2. Classification, Regression & Unsupervised", "Fits Supervised models plus Clustering (K-Means, DBSCAN), PCA, and Anomaly Detection."),
+        (ICON_COMPARE, "3. Explainable AI & Leaderboard", "Ranks performance scores, feature importance, confusion matrix, residual/cluster plots, and exports reports."),
     ]
     for col, (icon_svg, title, desc) in zip([c1, c2, c3], cards):
         with col:
@@ -1215,29 +1332,37 @@ elif _results_pre is None:
         '<div class="ag-card-header">'
         '<div class="ag-card-title">'
         '<span style="color:#4f46e5;">⚡</span>'
-        '<span>Configure Target Variable & Launch Pipeline</span>'
+        '<span>Configure Target Variable & Task Setup</span>'
         '</div>'
-        '<span style="background:#f5f3ff; color:#4f46e5; border:1px solid #c7d2fe; font-size:0.75rem; font-weight:800; padding:0.25rem 0.6rem; border-radius:6px;">Ready to Train</span>'
+        f'<span style="background:#f5f3ff; color:#4f46e5; border:1px solid #c7d2fe; font-size:0.75rem; font-weight:800; padding:0.25rem 0.6rem; border-radius:6px;">✨ Auto-Detected: {task_type.capitalize()}</span>'
         '</div>',
         unsafe_allow_html=True,
     )
 
-    c_tgt, c_task, c_btn = st.columns([2, 1.2, 1.5])
+    c_tgt, c_task, c_btn = st.columns([1.5, 1.8, 1.3])
     with c_tgt:
         st.markdown('<p style="font-weight:800; color:#0f172a; font-size:0.9rem; margin-bottom:0.3rem;">Target Variable (To Predict)</p>', unsafe_allow_html=True)
+        target_options = [NONE_UNSUPERVISED] + list(df.columns)
         cur_target = st.session_state.get("target_col", df.columns[-1])
-        cur_idx = list(df.columns).index(cur_target) if cur_target in df.columns else (len(df.columns) - 1)
+        sel_idx = 0 if cur_target == NONE_UNSUPERVISED else (target_options.index(cur_target) if cur_target in target_options else 1)
         m_target = st.selectbox(
-            "Target Column", df.columns,
-            index=cur_idx,
+            "Target Column", target_options,
+            index=sel_idx,
             label_visibility="collapsed",
             key="main_overview_target_select",
             on_change=update_target_from_main
         )
 
     with c_task:
-        st.markdown('<p style="font-weight:800; color:#0f172a; font-size:0.9rem; margin-bottom:0.3rem;">Active Task Mode</p>', unsafe_allow_html=True)
-        st.markdown(f'<div style="background:#f5f3ff; border:1px solid #c7d2fe; padding:0.5rem 0.85rem; border-radius:8px; font-weight:800; color:#4f46e5; font-size:0.92rem; text-transform:capitalize;">{task_type}</div>', unsafe_allow_html=True)
+        st.markdown('<p style="font-weight:800; color:#0f172a; font-size:0.9rem; margin-bottom:0.3rem;">Select ML Task Mode</p>', unsafe_allow_html=True)
+        cur_overview_idx = TASK_OPTIONS.index(st.session_state.get("task_type", "classification").capitalize()) if st.session_state.get("task_type", "classification").capitalize() in TASK_OPTIONS else 0
+        o_task = st.radio(
+            "Overview Task Mode", TASK_OPTIONS,
+            index=cur_overview_idx,
+            horizontal=True, label_visibility="collapsed",
+            key="main_overview_task_radio",
+            on_change=update_task_from_overview
+        ).lower()
 
     with c_btn:
         st.markdown('<p style="font-weight:800; color:transparent; font-size:0.9rem; margin-bottom:0.3rem;">Run</p>', unsafe_allow_html=True)
@@ -1253,17 +1378,21 @@ if results is not None and not start_training:
     rt      = results["task_type"]
     rname   = results["best_name"]
     rdf     = results["results_df"]
-    p_label = "F1-Score" if rt == "classification" else "R²"
-    algo_d  = ALGORITHM_INFO if rt == "classification" else REGRESSION_INFO
+    p_label = ("F1-Score" if rt == "classification"
+               else ("R²" if rt == "regression"
+                     else "Silhouette Score"))
+    algo_d  = (ALGORITHM_INFO if rt == "classification"
+               else (REGRESSION_INFO if rt == "regression"
+                     else UNSUPERVISED_INFO))
 
     # Winner Hero Summary Card
     st.markdown(
         f'<div class="ag-card" style="background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%); color: #ffffff; padding: 1.5rem 1.75rem; border: none;">'
         f'<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">'
         f'<div>'
-        f'<span style="background:rgba(255,255,255,0.2); color:#ffffff; font-size:0.75rem; font-weight:800; padding:0.25rem 0.75rem; border-radius:9999px; text-transform:uppercase; letter-spacing:0.06em;">🏆 WINNING MODEL</span>'
+        f'<span style="background:rgba(255,255,255,0.2); color:#ffffff; font-size:0.75rem; font-weight:800; padding:0.25rem 0.75rem; border-radius:9999px; text-transform:uppercase; letter-spacing:0.06em;">🏆 WINNING ALGORITHM</span>'
         f'<h2 style="font-size:1.8rem; font-weight:800; color:#ffffff; margin:0.4rem 0 0.2rem 0; letter-spacing:-0.02em;">{rname}</h2>'
-        f'<p style="margin:0; color:rgba(255,255,255,0.85); font-size:0.9rem; font-weight:500;">Outperformed {len(rdf)-1} other algorithms on test dataset</p>'
+        f'<p style="margin:0; color:rgba(255,255,255,0.85); font-size:0.9rem; font-weight:500;">Outperformed {len(rdf)-1} other algorithms on dataset</p>'
         f'</div>'
         f'<div style="display:flex; gap:1rem; align-items:center;">'
         f'<div style="background:rgba(255,255,255,0.15); border:1px solid rgba(255,255,255,0.25); border-radius:12px; padding:0.75rem 1.25rem; text-align:center;">'
@@ -1305,8 +1434,10 @@ if results is not None and not start_training:
     with why_col:
         if rt == "classification":
             st.info("**Why F1-Score?** Harmonic mean of Precision & Recall — robust to class imbalance, unlike raw accuracy.")
-        else:
+        elif rt == "regression":
             st.info("**Why R²?** Fraction of variance explained. MAE/RMSE give error magnitude in target units.")
+        else:
+            st.info("**Why Silhouette Score?** Measures how well samples are clustered with their own cluster versus neighbor clusters (-1 to +1).")
     with tip_col:
         if results.get("tuning_info"):
             ti = results["tuning_info"]
@@ -1315,15 +1446,19 @@ if results is not None and not start_training:
                 f"Best params: `{ti['best_params']}`  \n"
                 f"CV {ti['scoring']}: **{ti['cv_score']}**"
             )
+        elif rt == "unsupervised":
+            st.success(f"Evaluated 10 unsupervised algorithms (Clustering, PCA, Anomaly Detection). Top model: **{rname}**.")
 
     # 3. Performance comparison
     st.markdown(section("Performance Comparison"), unsafe_allow_html=True)
-    st.markdown(chart_header("All 16 Models · Test Set Evaluation",
+    st.markdown(chart_header(f"All Models · {rt.capitalize()} Evaluation",
                              "Higher is better for all primary metrics"), unsafe_allow_html=True)
     if rt == "classification":
         st.plotly_chart(plot_model_comparison_clf(rdf), use_container_width=True)
-    else:
+    elif rt == "regression":
         st.plotly_chart(plot_model_comparison_reg(rdf), use_container_width=True)
+    else:
+        st.plotly_chart(plot_model_comparison_unsupervised(rdf), use_container_width=True)
 
     if results["run_cv"]:
         cv_fig = plot_cv_comparison(rdf, rt)
@@ -1336,8 +1471,8 @@ if results is not None and not start_training:
     # 4. Detailed analysis grid
     st.markdown(section("Detailed Model Diagnostics"), unsafe_allow_html=True)
 
-    col_a, col_b = st.columns(2)
     if rt == "classification":
+        col_a, col_b = st.columns(2)
         with col_a:
             st.markdown(chart_header("Confusion Matrix Heatmap",
                                      f"Winning Model: {rname}"), unsafe_allow_html=True)
@@ -1354,10 +1489,11 @@ if results is not None and not start_training:
                 top5["Importance"] = top5["Importance"].round(4)
                 st.dataframe(top5, hide_index=True, use_container_width=True)
                 st.caption(results["importance_method"])
-    else:
+    elif rt == "regression":
         y_arr = (results["y_test"].values
                  if hasattr(results["y_test"], "values")
                  else np.asarray(results["y_test"]))
+        col_a, col_b = st.columns(2)
         with col_a:
             st.markdown(chart_header("Actual vs Predicted",
                                      "Points on the diagonal line = perfect prediction"),
@@ -1374,6 +1510,22 @@ if results is not None and not start_training:
                 plot_residuals(y_arr, results["best_predictions"], rname),
                 use_container_width=True,
             )
+    else:
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.markdown(chart_header("2D Cluster & PCA Projection", f"Winning Algorithm: {rname}"), unsafe_allow_html=True)
+            st.plotly_chart(
+                plot_cluster_pca_scatter(results["X_scaled"], results["best_predictions"], rname),
+                use_container_width=True,
+            )
+        with col_b:
+            st.markdown(chart_header("Unsupervised Group Sample Counts"), unsafe_allow_html=True)
+            if results["best_predictions"] is not None:
+                group_counts = pd.Series(results["best_predictions"]).value_counts().reset_index()
+                group_counts.columns = ["Cluster / Group ID", "Sample Count"]
+                st.dataframe(group_counts, use_container_width=True, hide_index=True)
+            else:
+                st.info("Dimensionality reduction model projects feature space into component axes.")
 
     # Feature importance full chart
     if results["importance"] is not None:
@@ -1392,7 +1544,7 @@ if results is not None and not start_training:
 
     # 5. Algorithm Reference Guide
     st.markdown(section("Algorithm Reference & Documentation"), unsafe_allow_html=True)
-    with st.expander("📚 How each of the 16 trained algorithms works (Technical Guide for Presentation)"):
+    with st.expander(f"📚 How each of the {len(rdf)} trained algorithms works (Technical Guide for Presentation)"):
         for name, desc in algo_d.items():
             trophy = " 🏆 (Winner)" if name == rname else ""
             st.markdown(f"**{name}{trophy}** — {desc}")

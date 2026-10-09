@@ -59,6 +59,52 @@ def coerce_object_columns_to_numeric(X):
     return X
 
 
+def auto_detect_task_type(df, target_col=None):
+    """Auto-detect whether dataset task should be classification, regression, or unsupervised."""
+    if df is None or df.empty:
+        return "classification"
+
+    NONE_UNSUPERVISED = "None (Unsupervised Learning)"
+    if target_col == NONE_UNSUPERVISED:
+        return "unsupervised"
+
+    # Check for known target candidate names in columns
+    common_targets = ("target", "class", "label", "y", "species", "diagnosis",
+                      "outcome", "survived", "purchased", "price", "salary",
+                      "value", "score", "result")
+
+    found_common = next((c for c in df.columns if c.strip().lower() in common_targets), None)
+
+    # If no target specified or target column invalid
+    if target_col is None or target_col not in df.columns:
+        if found_common:
+            target_col = found_common
+        else:
+            # Check if all columns are numeric features with no clear label column
+            typed_df = coerce_object_columns_to_numeric(df.copy())
+            num_cols = typed_df.select_dtypes(include=[np.number]).columns
+            if len(num_cols) == df.shape[1]:
+                return "unsupervised"
+            target_col = df.columns[-1]
+
+    col_data = df[target_col].dropna()
+    if len(col_data) == 0:
+        return "unsupervised"
+
+    if col_data.dtype == object or col_data.dtype == bool or isinstance(col_data.dtype, pd.CategoricalDtype):
+        return "classification"
+
+    numeric_col = pd.to_numeric(col_data, errors="coerce")
+    if numeric_col.isna().all():
+        return "classification"
+
+    n_unique = numeric_col.nunique()
+    if n_unique <= 10:
+        return "classification"
+    else:
+        return "regression"
+
+
 def prepare_features_and_target(df, target_col, task_type="classification"):
     """Separate features and target, encode target column if categorical."""
     data = df.replace([np.inf, -np.inf], np.nan)
@@ -81,9 +127,11 @@ def prepare_features_and_target(df, target_col, task_type="classification"):
     else:
         target_encoder = None
         numeric_y = pd.to_numeric(data[target_col], errors="coerce")
-        if numeric_y.isna().all():
-            raise ValueError(f"Target '{target_col}' must contain numeric values for regression.")
-        y = pd.Series(numeric_y.values, index=data.index)
+        valid_mask = numeric_y.notna()
+        if not valid_mask.any():
+            raise ValueError(f"Target '{target_col}' does not contain valid numeric values for regression. Switch to Classification or select a numeric column.")
+        data = data[valid_mask]
+        y = pd.Series(numeric_y[valid_mask].values, index=data.index)
         n_classes, class_names = None, None
 
     # Feature processing
@@ -108,6 +156,58 @@ def prepare_features_and_target(df, target_col, task_type="classification"):
     }
 
     return X, y, target_encoder, col_info
+
+
+def prepare_unsupervised_features(df):
+    """Prepare dataset for unsupervised learning (clustering, PCA, anomaly detection)."""
+    data = df.replace([np.inf, -np.inf], np.nan).copy()
+    if data.shape[0] < 5:
+        raise ValueError("Dataset must have at least 5 rows for unsupervised learning.")
+
+    data = coerce_object_columns_to_numeric(data)
+    data = data.dropna(axis=1, how="all")
+
+    if data.shape[1] == 0:
+        raise ValueError("No valid feature columns remaining in dataset.")
+
+    numeric_cols = data.select_dtypes(include=[np.number]).columns.tolist()
+    categorical_cols = [c for c in data.columns if c not in numeric_cols]
+    missing_before = int(data.isna().sum().sum())
+
+    X_processed = data.copy()
+
+    # Numeric imputation
+    if numeric_cols:
+        num_imputer = SimpleImputer(strategy="median")
+        X_processed[numeric_cols] = num_imputer.fit_transform(X_processed[numeric_cols])
+
+    # Categorical imputation & encoding
+    if categorical_cols:
+        X_processed[categorical_cols] = X_processed[categorical_cols].astype(str)
+        cat_imputer = SimpleImputer(strategy="most_frequent")
+        X_processed[categorical_cols] = cat_imputer.fit_transform(X_processed[categorical_cols])
+        for col in categorical_cols:
+            le = LabelEncoder()
+            X_processed[col] = le.fit_transform(X_processed[col].astype(str))
+
+    # Feature scaling
+    scaler = StandardScaler()
+    X_scaled = pd.DataFrame(
+        scaler.fit_transform(X_processed),
+        columns=X_processed.columns,
+        index=X_processed.index,
+    )
+
+    col_info = {
+        "numeric_cols": numeric_cols,
+        "categorical_cols": categorical_cols,
+        "missing_before": missing_before,
+        "dropped_target_rows": 0,
+        "n_classes": None,
+        "class_names": None,
+    }
+
+    return X_scaled, col_info
 
 
 def fit_transform_train(X_train, col_info):
